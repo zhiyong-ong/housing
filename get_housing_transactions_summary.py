@@ -78,8 +78,10 @@ def scrape_summary_data(get_url, post_url, end_dt):
 
 
 def main():
+    # Information on the preceding month's transactions (e.g. in Apr 2013) will be uploaded on the e-Service on 15th
+    # of the following month (e.g. in May 2013). If the scheduled date of update falls on a public holiday,
+    # it will be updated on the following working day.
     current_dt = datetime.today()
-
     if current_dt.day > 20:
         end_dt = current_dt - relativedelta(months=1)
     else:

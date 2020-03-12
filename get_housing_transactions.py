@@ -93,6 +93,7 @@ def scrape_ura_data(get_url, post_url, property_type, start_date, end_date):
 
 def main():
 
+    # The website only has 3 years worth of data.
     current_dt = datetime.today()
     current_year = current_dt.year
     current_month = current_dt.strftime('%b').upper()
