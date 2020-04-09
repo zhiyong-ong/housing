@@ -29,7 +29,7 @@ def format_df(df, cur_dt):
     return df
 
 
-def scrape_summary_data(get_url, end_dt, token):
+def scrape_summary_data(get_url, post_url, end_dt):
     """
     this function is used to scrape the data from the ura website
      get_url: the starting url to retrieve the cookie from
@@ -43,25 +43,31 @@ def scrape_summary_data(get_url, end_dt, token):
     if not os.path.exists(dest_folder):
         os.mkdir(dest_folder)
 
-    query_param = {
-        'service': 'PMI_Resi_Developer_Sales',
-        'refPeriod': ''
+
+    form_data = {
+        'yearSelect': '',
+        'monthSelect': '',
     }
 
-    headers = {
-        'AccessKey': ACCESS_KEY,
-        'Token': token
-    }
+    session = requests.Session()
+    session.get(get_url)
+
+    # Sleep is necessary here to somehow allow their backend to persist the cookie first
+    sleep(3)
+
+    cookies = requests.utils.dict_from_cookiejar(session.cookies)
+    post_url = post_url + ';jsessionid=' + cookies['JSESSIONID']
 
     data = pd.DataFrame()
     while start_dt < end_dt:
-        print(f"Scraping for {start_dt.strftime('%Y-%m')}...")
+        cur_year = start_dt.year
+        cur_month = start_dt.month
+        print(f"Scraping for year {cur_year} and month {cur_month}...")
 
-        query_param['refPeriod'] = start_dt.strftime('%m%y')
+        form_data['yearSelect'] = str(cur_year)
+        form_data['monthSelect'] = str(cur_month)
 
-        resp_json = requests.get(get_url, params=query_param, headers=headers).json()
-        if resp_json:
-            resp_json['Result']
+        resp = session.post(post_url, form_data)
         try:
             df = pd.read_html(resp.text)[0]
             print(f"Retrieved {len(df)} rows of data!")
@@ -76,28 +82,22 @@ def scrape_summary_data(get_url, end_dt, token):
     dest_path = os.path.join(dest_folder, f'transaction_summary.csv')
     data.to_csv(dest_path, index=False)
 
-def get_token():
-    headers = {
-        "AccessKey": ACCESS_KEY
-    }
-    resp = requests.get('https://www.ura.gov.sg/uraDataService/insertNewToken.action', headers=headers)
-    return resp.json()['Result']
 
 def main():
     # Information on the preceding month's transactions (e.g. in Apr 2013) will be uploaded on the e-Service on 15th
     # of the following month (e.g. in May 2013). If the scheduled date of update falls on a public holiday,
     # it will be updated on the following working day.
     current_dt = datetime.today()
-    if current_dt.day > 20:
+    if current_dt.day > 15:
         end_dt = current_dt - relativedelta(months=1)
     else:
         end_dt = current_dt - relativedelta(months=2)
 
     # scrape for condos data
-    token = get_token()
     print(f"Scraping transaction summary data until {end_dt}")
-    get_url = "https://www.ura.gov.sg/uraDataService/invokeUraDS"
-    scrape_summary_data(get_url, end_dt)
+    post_url = "https://www.ura.gov.sg/realEstateIIWeb/price/submitSearch.action"
+    get_url = "https://www.ura.gov.sg/realEstateIIWeb/price/search.action"
+    scrape_summary_data(get_url, post_url, end_dt)
 
 
 if __name__ == '__main__':
