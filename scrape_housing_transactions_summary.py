@@ -6,8 +6,6 @@ from time import sleep
 import pandas as pd
 import requests
 
-from secret import ACCESS_KEY
-
 from dateutil.relativedelta import relativedelta
 
 

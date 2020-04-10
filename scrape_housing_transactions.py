@@ -1,10 +1,22 @@
 import calendar
 import os
+import sys
 from datetime import datetime
 from time import sleep
 
 import pandas as pd
 import requests
+
+import logging
+
+from dateutil import relativedelta
+
+logger = logging.getLogger()
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 def convert_str_to_date(input_str):
@@ -38,8 +50,7 @@ def scrape_ura_data(get_url, post_url, property_type, start_date, end_date):
         dest_folder = os.path.join('data', 'executive_condos')
     else:
         raise AttributeError("Property type has to be either ec or ac")
-    if not os.path.exists(dest_folder):
-        os.mkdir(dest_folder)
+    os.makedirs(dest_folder, exist_ok=True)
 
     max_postal_district_list = 28
 
@@ -55,26 +66,33 @@ def scrape_ura_data(get_url, post_url, property_type, start_date, end_date):
         'selectedPostalDistricts1': '01',
         '__multiselect_selectedPostalDistricts1': None
     }
+    headers = {
+      'Upgrade-Insecure-Requests': '1',
+      'Origin': 'https://www.ura.gov.sg',
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.92 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
 
     session = requests.Session()
-    session.get(get_url)
+    session.get(get_url, headers=headers)
 
     # Sleep is necessary here to somehow allow their backend to persist the cookie first
-    sleep(3)
+    sleep(5)
 
     cookies = requests.utils.dict_from_cookiejar(session.cookies)
     post_url = post_url + ';jsessionid=' + cookies['JSESSIONID']
     accumulate_df = pd.DataFrame()
     for i in range(1, max_postal_district_list + 1):
-        print(f"Scraping for district {i}...")
+        logger.info(f"Scraping for district {i}...")
 
         postal_district = f'0{i}' if i < 10 else str(i)
         form_data['selectedPostalDistricts1'] = postal_district
-        resp = session.post(post_url, form_data)
+        resp = session.post(post_url, data=form_data, headers=headers)
         try:
             df = pd.read_html(resp.text)[0]
         except ValueError as e:
-            print(f"Unable to scrape for district {i}. Error: {e}. Ignoring...")
+            logger.info(f"Unable to scrape for district {i}. Error: {e}. Ignoring...")
             continue
 
         format_df(df)
@@ -97,18 +115,20 @@ def main():
     current_dt = datetime.today()
     current_year = current_dt.year
     current_month = current_dt.strftime('%b').upper()
+    previous_month = (current_dt - relativedelta.relativedelta(months=1)).strftime('%b').upper()
     start_date_str = f"{current_month} {current_year - 3}"
-    end_date_str = f"{current_month} {current_year}"
+    end_date_str = f"{previous_month} {current_year}"
 
+    logger.info(f"Scraping from {start_date_str} to {end_date_str} worth of data")
     # scrape for condos data
-    print("Scraping condo data")
+    logger.info("Scraping condo data")
     ac_post_url = "https://www.ura.gov.sg/realEstateIIWeb/transaction/submitSearch.action"
     ac_get_url = "https://www.ura.gov.sg/realEstateIIWeb/transaction/search.action"
     scrape_ura_data(ac_get_url, ac_post_url, 'ac', start_date_str, end_date_str)
 
 
     # scrape for ec data
-    print("Scraping EC data")
+    logger.info("Scraping EC data")
     ec_post_url = "https://www.ura.gov.sg/realEstateIIWeb/transaction/submitSearch.action"
     ec_get_url = "https://www.ura.gov.sg/realEstateIIWeb/transaction/search.action"
     scrape_ura_data(ec_get_url, ec_post_url, 'ec', start_date_str, end_date_str)
