@@ -98,12 +98,13 @@ def get_transaction_data(token_url, data_url, batch_num):
 
 
 def save_df_to_file(file_path, df):
-    subset_cols = ['street', 'project', 'market_segment', 'area_sqm', 'price', 'nett_price', 'floor_range', 'num_units',
-                   'reference_period', 'type_of_sale', 'property_type', 'district', 'type_of_area', 'tenure']
+    subset_cols = ['x', 'y', 'street', 'project', 'market_segment', 'area_sqm', 'price', 'nett_price', 'floor_range',
+                   'num_units', 'reference_period', 'type_of_sale', 'property_type', 'district', 'type_of_area',
+                   'tenure']
 
     if os.path.isfile(file_path):
         # update the dataframe here and save it again
-        existing_df = pd.read_csv(file_path)
+        existing_df = pd.read_csv(file_path, float_precision='round_trip')
         logger.info(
             f"Found existing file with {len(existing_df)} rows... Combining the data and dropping duplicates...")
 
