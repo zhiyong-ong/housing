@@ -123,7 +123,7 @@ def main():
     setup_logger(logger)
     token_url = 'https://www.ura.gov.sg/uraDataService/insertNewToken.action'
     data_url = 'https://www.ura.gov.sg/uraDataService/invokeUraDS'
-    dest_folder = os.path.join('data', 'private_prop_transactions')
+    dest_folder = os.path.join('data')
     os.makedirs(dest_folder, exist_ok=True)
 
     df = pd.DataFrame()
