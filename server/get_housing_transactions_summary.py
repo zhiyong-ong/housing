@@ -1,14 +1,19 @@
 import calendar
+import logging
 import os
 from datetime import datetime, timedelta, date
-from time import sleep
+from time import sleep, perf_counter
 
+import click
 import pandas as pd
 import requests
 
-from secret import ACCESS_KEY
-
 from dateutil.relativedelta import relativedelta
+
+from config import URA_WEBSITE_TX_SUMMARY_GET_URL, URA_WEBSITE_TX_SUMMARY_POST_URL
+from utils import setup_logger
+
+logger = logging.getLogger(__name__)
 
 
 def convert_str_to_date(input_dt):
@@ -29,7 +34,7 @@ def format_df(df, cur_dt):
     return df
 
 
-def scrape_summary_data(get_url, end_dt, token):
+def scrape_summary_data(get_url, post_url, end_dt):
     """
     this function is used to scrape the data from the ura website
      get_url: the starting url to retrieve the cookie from
@@ -43,30 +48,35 @@ def scrape_summary_data(get_url, end_dt, token):
     if not os.path.exists(dest_folder):
         os.mkdir(dest_folder)
 
-    query_param = {
-        'service': 'PMI_Resi_Developer_Sales',
-        'refPeriod': ''
+    form_data = {
+        'yearSelect': '',
+        'monthSelect': '',
     }
 
-    headers = {
-        'AccessKey': ACCESS_KEY,
-        'Token': token
-    }
+    session = requests.Session()
+    session.get(get_url)
+
+    # Sleep is necessary here to somehow allow their backend to persist the cookie first
+    sleep(3)
+
+    cookies = requests.utils.dict_from_cookiejar(session.cookies)
+    post_url = post_url + ';jsessionid=' + cookies['JSESSIONID']
 
     data = pd.DataFrame()
     while start_dt < end_dt:
-        print(f"Scraping for {start_dt.strftime('%Y-%m')}...")
+        cur_year = start_dt.year
+        cur_month = start_dt.month
+        logger.info(f"Scraping for year {cur_year} and month {cur_month}...")
 
-        query_param['refPeriod'] = start_dt.strftime('%m%y')
+        form_data['yearSelect'] = str(cur_year)
+        form_data['monthSelect'] = str(cur_month)
 
-        resp_json = requests.get(get_url, params=query_param, headers=headers).json()
-        if resp_json:
-            resp_json['Result']
+        resp = session.post(post_url, form_data)
         try:
             df = pd.read_html(resp.text)[0]
-            print(f"Retrieved {len(df)} rows of data!")
+            logger.info(f"Retrieved {len(df)} rows of data!")
         except ValueError as e:
-            print(f"Unable to scrape for year {cur_year} and month {cur_month}. Error: {e}. Ignoring...")
+            logger.info(f"Unable to scrape for year {cur_year} and month {cur_month}. Error: {e}. Ignoring...")
             continue
         df = format_df(df, start_dt)
         df.drop(df.tail(2).index, inplace=True)
@@ -76,28 +86,31 @@ def scrape_summary_data(get_url, end_dt, token):
     dest_path = os.path.join(dest_folder, f'transaction_summary.csv')
     data.to_csv(dest_path, index=False)
 
-def get_token():
-    headers = {
-        "AccessKey": ACCESS_KEY
-    }
-    resp = requests.get('https://www.ura.gov.sg/uraDataService/insertNewToken.action', headers=headers)
-    return resp.json()['Result']
 
-def main():
+@click.command()
+@click.option('--log-dir', default=None, help='Specify the file path for the log file')
+def main(log_dir):
     # Information on the preceding month's transactions (e.g. in Apr 2013) will be uploaded on the e-Service on 15th
     # of the following month (e.g. in May 2013). If the scheduled date of update falls on a public holiday,
     # it will be updated on the following working day.
+    start_time = perf_counter()
+
+    setup_logger(logger, log_dir)
+    logger.info(f"Starting {__file__} with args: {log_dir}")
+
     current_dt = datetime.today()
     if current_dt.day > 20:
         end_dt = current_dt - relativedelta(months=1)
     else:
         end_dt = current_dt - relativedelta(months=2)
 
-    # scrape for condos data
-    token = get_token()
-    print(f"Scraping transaction summary data until {end_dt}")
-    get_url = "https://www.ura.gov.sg/uraDataService/invokeUraDS"
-    scrape_summary_data(get_url, end_dt)
+    logger.info(f"Scraping transaction summary data until {end_dt}")
+    # We use a web scraping method here because the data here has historical data till 2007
+    post_url, get_url = URA_WEBSITE_TX_SUMMARY_POST_URL, URA_WEBSITE_TX_SUMMARY_GET_URL
+    scrape_summary_data(get_url, post_url, end_dt)
+
+    duration = perf_counter() - start_time
+    logger.info(f"Program ended. Total duration {duration}")
 
 
 if __name__ == '__main__':
