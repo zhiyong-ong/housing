@@ -1,13 +1,12 @@
 import calendar
 import logging
 import os
-from datetime import datetime, timedelta, date
+from datetime import datetime
 from time import sleep, perf_counter
 
 import click
 import pandas as pd
 import requests
-
 from dateutil.relativedelta import relativedelta
 
 from config import URA_WEBSITE_TX_SUMMARY_GET_URL, URA_WEBSITE_TX_SUMMARY_POST_URL
@@ -82,9 +81,12 @@ def scrape_summary_data(get_url, post_url, end_dt):
         df.drop(df.tail(2).index, inplace=True)
         data = data.append(df)
         start_dt += relativedelta(months=1)
+    return data
 
-    dest_path = os.path.join(dest_folder, f'transaction_summary.csv')
-    data.to_csv(dest_path, index=False)
+
+def save_df_to_csv(dest_path, df):
+    logger.info(f"Saving {len(df)} rows of data to {dest_path}")
+    df.to_csv(dest_path, index=False)
 
 
 @click.command()
@@ -103,11 +105,16 @@ def main(log_dir):
         end_dt = current_dt - relativedelta(months=1)
     else:
         end_dt = current_dt - relativedelta(months=2)
-
     logger.info(f"Scraping transaction summary data until {end_dt}")
+
+    dest_folder = os.path.abspath('data')
+    dest_file_path = os.path.join(dest_folder, 'transaction_summary.csv')
+    os.makedirs(dest_folder, exist_ok=True)
+
     # We use a web scraping method here because the data here has historical data till 2007
     post_url, get_url = URA_WEBSITE_TX_SUMMARY_POST_URL, URA_WEBSITE_TX_SUMMARY_GET_URL
-    scrape_summary_data(get_url, post_url, end_dt)
+    df = scrape_summary_data(get_url, post_url, end_dt)
+    save_df_to_csv(dest_file_path, df)
 
     duration = perf_counter() - start_time
     logger.info(f"Program ended. Total duration {duration}")

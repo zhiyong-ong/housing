@@ -3,10 +3,13 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
+from time import perf_counter
 
+import click
 import pandas as pd
 import requests
 
+from config import URA_TOKEN_URL, URA_API_URL, HOUSING_TRANSACTION_REQUEST_PARAM
 from secret import ACCESS_KEY
 from utils import setup_logger
 
@@ -89,7 +92,7 @@ def get_transaction_data(token_url, data_url, batch_num):
         'Token': token
     }
     params = {
-        'service': 'PMI_Resi_Transaction',
+        'service': HOUSING_TRANSACTION_REQUEST_PARAM,
         'batch': batch_num,
     }
     resp = requests.get(data_url, headers=headers, params=params)
@@ -97,7 +100,17 @@ def get_transaction_data(token_url, data_url, batch_num):
     return df
 
 
-def save_df_to_file(file_path, df):
+def get_data(token_url, api_url):
+    df = pd.DataFrame()
+    for batch_num in range(1, 5):
+        logger.info(f"Getting data for batch {batch_num}")
+        df = df.append(get_transaction_data(token_url, api_url, batch_num))
+    df['observation_time'] = datetime.now()
+    logger.info(f"Total rows retrieved: {len(df)}")
+    return df
+
+
+def save_df_to_csv(file_path, df):
     subset_cols = ['x', 'y', 'street', 'project', 'market_segment', 'area_sqm', 'price', 'nett_price', 'floor_range',
                    'num_units', 'reference_period', 'type_of_sale', 'property_type', 'district', 'type_of_area',
                    'tenure']
@@ -115,25 +128,28 @@ def save_df_to_file(file_path, df):
     else:
         logger.info(f"No existing file... Dropping duplicates...")
         df.drop_duplicates(subset=subset_cols, inplace=True)
-        logger.info(f"Saving {len(df)} rows to {file_path}.")
+        logger.info(f"Saving {len(df)} rows to {file_path}")
         df.to_csv(file_path, index=False)
 
 
-def main():
-    setup_logger(logger)
-    token_url = 'https://www.ura.gov.sg/uraDataService/insertNewToken.action'
-    data_url = 'https://www.ura.gov.sg/uraDataService/invokeUraDS'
-    dest_folder = os.path.join('data')
+@click.command()
+@click.option('--log-dir', default=None, help='Specify the file path for the log file')
+def main(log_dir):
+    start_time = perf_counter()
+    setup_logger(logger, log_dir)
+    logger.info(f"Starting {__file__} with args: {log_dir}")
+
+    # We use the URA API here because it gives us the x y coordinates (more data essentially)
+    token_url, api_url = URA_TOKEN_URL, URA_API_URL
+    dest_folder = os.path.abspath('data')
+    dest_file_path = os.path.join(dest_folder, 'total_transactions.csv')
     os.makedirs(dest_folder, exist_ok=True)
 
-    df = pd.DataFrame()
-    for batch_num in range(1, 5):
-        logger.info(f"Getting data for batch {batch_num}")
-        df = df.append(get_transaction_data(token_url, data_url, batch_num))
-    df['observation_time'] = datetime.now()
-    logger.info(f"Total rows retrieved: {len(df)}")
-    file_path = os.path.join(dest_folder, 'total_transactions.csv')
-    save_df_to_file(file_path, df)
+    df = get_data(token_url, api_url)
+    save_df_to_csv(dest_file_path, df)
+
+    duration = perf_counter() - start_time
+    logger.info(f"Program ended. Total duration {duration}")
 
 
 if __name__ == '__main__':

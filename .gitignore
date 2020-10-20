@@ -2,5 +2,6 @@ env/
 data/
 .idea/
 .ipynb_checkpoints/
+logs/
 *.bat
 secret.py
