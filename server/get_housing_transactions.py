@@ -112,7 +112,7 @@ def format_df(df):
     columns_mapping = {
         'Project Name': 'project_name',
         'Street Name': 'street_name',
-        'Type': 'type',
+        'Type': 'property_type',
         'Postal District': 'postal_district',
         'Market Segment': 'market_segment',
         'Tenure': 'tenure',
@@ -137,7 +137,7 @@ def format_df(df):
 
 
 def save_df_to_csv(file_path, df):
-    subset_cols = ['project_name', 'street_name', 'type', 'postal_district', 'market_segment', 'tenure', 'type_of_sale',
+    subset_cols = ['project_name', 'street_name', 'property_type', 'postal_district', 'market_segment', 'tenure', 'type_of_sale',
                    'num_units', 'price', 'nett_price', 'area_sqft', 'type_of_area', 'floor', 'unit_price_psf']
     logger.info("Saving df to csv...")
     if os.path.isfile(file_path):
@@ -151,7 +151,7 @@ def save_df_to_csv(file_path, df):
         combined_df.to_csv(file_path, index=False)
         logger.info(f"Saved combined data with {len(combined_df)} rows.")
     else:
-        logger.info(f"No existing file... Dropping duplicates...")
+        logger.info(f"No existing file... Dropping duplicates from df of length {len(df)}...")
         df.drop_duplicates(subset=subset_cols, inplace=True)
         logger.info(f"Saving {len(df)} rows to {file_path}")
         df.to_csv(file_path, index=False)
