@@ -1,120 +1,145 @@
-import calendar
 import logging
 import os
-from collections import defaultdict
 from datetime import datetime
-from time import perf_counter
+from time import perf_counter, sleep
 
 import click
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 
-from config import URA_TOKEN_URL, URA_API_URL, HOUSING_TRANSACTION_REQUEST_PARAM
-from secret import ACCESS_KEY
+from config import URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
 from utils import setup_logger
 
 logger = logging.getLogger(__name__)
 
-
-def get_token(url):
-    headers = {
-        "AccessKey": ACCESS_KEY
-    }
-    resp = requests.get(url, headers=headers)
-    token = resp.json()['Result']
-    return token
+PROPERTY_TYPE_CODE = {
+    'Landed Properties': 'lp',
+    'Strata Landed': 'sl',
+    'Apartments and Condo': 'ac',
+    'Executive Condo': 'ec'
+}
 
 
-def convert_str_to_date(input_str):
-    """ converting dates of 0220 for example to 29-02-2020"""
-    dt = datetime.strptime(input_str, '%m%y')
-    last_day = calendar.monthrange(dt.year, dt.month)[1]
-    dt = dt.replace(day=last_day)
-    return dt.strftime('%Y-%m-%d')
+def get_district_postal_code_list(soup):
+    district_postal_code_list = []
+    for item in soup.find(id='select1').children:
+        item_string = item.string
+        if item_string != '\n':
+            district_postal_code_list.append(item_string)
+    return district_postal_code_list
 
 
-def map_type_of_sale(type_of_sale_val):
-    mapping = {
-        '1': 'New Sale',
-        '2': 'Sub Sale',
-        '3': 'Resale'
-    }
-    return mapping.get(type_of_sale_val)
+def get_start_dt_end_dt(soup):
+    start_dt_list = []
+    end_dt_list = []
+
+    for item in soup.find(id='searchForm_selectedFromPeriodPostalDistrict').children:
+        item_string = item.string
+        if item_string != '\n':
+            start_dt_list.append(item_string)
+
+    for item in soup.find(id='searchForm_selectedToPeriodPostalDistrict').children:
+        item_string = item.string
+        if item_string != '\n':
+            end_dt_list.append(item_string)
+
+    # get min of start_dt and max of end_dt
+    start_dt = datetime.strftime(min([datetime.strptime(dt, '%b %Y') for dt in start_dt_list]), '%b %Y').upper()
+    end_dt = datetime.strftime(max([datetime.strptime(dt, '%b %Y') for dt in end_dt_list]), '%b %Y').upper()
+
+    return start_dt, end_dt
 
 
-def format_response_to_df(resp):
-    logger.info("Formatting response into a DataFrame object")
-    result = defaultdict(list)
-    for item in resp.json()['Result']:
-        for trans in item['transaction']:
-            result['y'].append(float(item['y']) if item.get('y') else None)
-            result['x'].append(float(item['x']) if item.get('x') else None)
-            result['street'].append(item['street'])
-            result['project'].append(item['project'])
-
-            result['market_segment'].append(item['marketSegment'])
-
-            area = float(trans['area'])
-            area_sqft = area * 10.76391042
-            result['area_sqm'].append(area)
-            result['area_sqft'].append(area_sqft)
-
-            result['price'].append(float(trans['price']))
-            result['nett_price'].append(float(trans['nettPrice']) if trans.get('nettPrice') else None)
-
-            result['unit_price_psm'].append(float(trans['price']) / area)
-            result['unit_price_psf'].append(float(trans['price']) / area_sqft)
-
-            result['floor_range'].append(trans['floorRange'])
-            result['num_units'].append(int(trans['noOfUnits']))
-            result['reference_period'].append(convert_str_to_date(trans['contractDate']))
-            result['type_of_sale'].append(map_type_of_sale(trans['typeOfSale']))
-            result['property_type'].append(trans['propertyType'])
-            result['district'].append(int(trans['district']))
-            result['type_of_area'].append(trans['typeOfArea'])
-            result['tenure'].append(trans['tenure'])
-    df = pd.DataFrame(result)
-    # replace all instances of NA with - so that it doesn't mess with pandas NaN when the csv is being read
-    df.replace('NA', '-', inplace=True)
-    logger.info(f"Retrieved {len(df)} rows of data")
-    return df
-
-
-def get_transaction_data(token_url, data_url, batch_num):
+def scrape_transaction_data(get_url, post_url):
     """
-    :param token_url: url to retrieve token from
-    :param data_url: url to retrieve data from
-    :param batch_num: as required by the API, batch_num ranges from 1 to 4.
+    this function is used to scrape the data from the ura website
+     get_url: the starting url to retrieve the cookie from and the postal district + start date and end date
+     post_url: the url to actually post the request
     """
-    token = get_token(token_url)
-    headers = {
-        'AccessKey': ACCESS_KEY,
-        'Token': token
+    session = requests.Session()
+    resp = session.get(get_url)
+
+    soup = BeautifulSoup(resp.text, 'lxml')
+
+    district_postal_code_list = get_district_postal_code_list(soup)
+
+    start_dt, end_dt = get_start_dt_end_dt(soup)
+
+    # Sleep is necessary here to somehow allow their backend to persist the cookie first
+    sleep(2)
+
+    cookies = requests.utils.dict_from_cookiejar(session.cookies)
+    post_url = post_url + ';jsessionid=' + cookies['JSESSIONID']
+
+    form_data = {
+        'submissionType': 'pd',
+        'selectedFromPeriodProjectName': start_dt,
+        'selectedToPeriodProjectName': end_dt,
+        '__multiselect_selectedProjects1': "",
+        'selectedFromPeriodPostalDistrict': start_dt,
+        'selectedToPeriodPostalDistrict': end_dt,
+        'propertyType': "",
+        'postalDistrictList': "28",
+        'selectedPostalDistricts1': None,
+        '__multiselect_selectedPostalDistricts1': ''
     }
-    params = {
-        'service': HOUSING_TRANSACTION_REQUEST_PARAM,
-        'batch': batch_num,
-    }
-    resp = requests.get(data_url, headers=headers, params=params)
-    df = format_response_to_df(resp)
-    return df
+    total_df = pd.DataFrame()
+    for property_type, property_code in PROPERTY_TYPE_CODE.items():
+        logger.info(f"Retrieving data for property type {property_type}")
+        for district in district_postal_code_list:
+            logger.info(f"Retrieving data for district: {district}")
+            form_data['selectedPostalDistricts1'] = district
+            form_data['propertyType'] = property_code
+            resp = session.post(post_url, form_data)
+
+            try:
+                df = pd.read_html(resp.text)[0]
+                logger.info(f"Retrieved {len(df)} rows of data!")
+            except ValueError:
+                logger.error(
+                    f"Unable to scrape for district {district} and start date {start_dt}, end date {end_dt}. Ignoring...")
+                continue
+            df = format_df(df)
+            total_df = total_df.append(df)
+
+            # sleep here to prevent spamming the website cause we're nice people
+            sleep(1)
+    return total_df
 
 
-def get_data(token_url, api_url):
-    df = pd.DataFrame()
-    for batch_num in range(1, 5):
-        logger.info(f"Getting data for batch {batch_num}")
-        df = df.append(get_transaction_data(token_url, api_url, batch_num))
-    df['observation_time'] = datetime.now()
-    logger.info(f"Total rows retrieved: {len(df)}")
+def format_df(df):
+    columns_mapping = {
+        'Project Name': 'project_name',
+        'Street Name': 'street_name',
+        'Type': 'type',
+        'Postal District': 'postal_district',
+        'Market Segment': 'market_segment',
+        'Tenure': 'tenure',
+        'Type of Sale': 'type_of_sale',
+        'No. of  Units': 'num_units',
+        'Price  ($)': 'price',
+        'Nett Price  ($)': 'nett_price',
+        'Area (Sqft)¹': 'area_sqft',
+        'Type of Area²': 'type_of_area',
+        'Floor Level': 'floor',
+        'Unit Price ($psf)³': 'unit_price_psf',
+        'Date of Sale⁴': 'reference_period',
+    }
+    df.rename(columns=columns_mapping, inplace=True)
+    df['reference_period'] = pd.to_datetime(df['reference_period'], format='%b-%y')
+    df['reference_period'] = df['reference_period'] + pd.DateOffset(months=1, days=-1)
+
+    df['area_sqm'] = df['area_sqft'] / 10.764
+    df['unit_price_psm'] = df['unit_price_psf'] * 10.764
+
     return df
 
 
 def save_df_to_csv(file_path, df):
-    subset_cols = ['x', 'y', 'street', 'project', 'market_segment', 'area_sqm', 'price', 'nett_price', 'floor_range',
-                   'num_units', 'reference_period', 'type_of_sale', 'property_type', 'district', 'type_of_area',
-                   'tenure']
-
+    subset_cols = ['project_name', 'street_name', 'type', 'postal_district', 'market_segment', 'tenure', 'type_of_sale',
+                   'num_units', 'price', 'nett_price', 'area_sqft', 'type_of_area', 'floor', 'unit_price_psf']
+    logger.info("Saving df to csv...")
     if os.path.isfile(file_path):
         # update the dataframe here and save it again
         existing_df = pd.read_csv(file_path, float_precision='round_trip')
@@ -140,12 +165,12 @@ def main(log_dir):
     logger.info(f"Starting {__file__} with args: {log_dir}")
 
     # We use the URA API here because it gives us the x y coordinates (more data essentially)
-    token_url, api_url = URA_TOKEN_URL, URA_API_URL
+    get_url, post_url = URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
     dest_folder = os.path.abspath('data')
     dest_file_path = os.path.join(dest_folder, 'total_transactions.csv')
     os.makedirs(dest_folder, exist_ok=True)
 
-    df = get_data(token_url, api_url)
+    df = scrape_transaction_data(get_url, post_url)
     save_df_to_csv(dest_file_path, df)
 
     duration = perf_counter() - start_time
