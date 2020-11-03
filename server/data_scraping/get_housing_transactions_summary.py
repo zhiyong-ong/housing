@@ -9,7 +9,7 @@ import pandas as pd
 import requests
 from dateutil.relativedelta import relativedelta
 
-from config import URA_WEBSITE_TX_SUMMARY_GET_URL, URA_WEBSITE_TX_SUMMARY_POST_URL
+from data_scraping.config import URA_WEBSITE_TX_SUMMARY_GET_URL, URA_WEBSITE_TX_SUMMARY_POST_URL
 from utils import setup_logger
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ def main(log_dir):
         end_dt = current_dt - relativedelta(months=2)
     logger.info(f"Scraping transaction summary data until {end_dt}")
 
-    dest_folder = os.path.abspath('data')
+    dest_folder = os.path.abspath('../data')
     dest_file_path = os.path.join(dest_folder, 'transaction_summary.csv')
     os.makedirs(dest_folder, exist_ok=True)
 
