@@ -153,6 +153,7 @@ def save_df_to_csv(file_path, df):
     else:
         logger.info(f"No existing file... Dropping duplicates from df of length {len(df)}...")
         df.drop_duplicates(subset=subset_cols, inplace=True)
+        df.sort_values('reference_period', ascending=False, inplace=True)
         logger.info(f"Saving {len(df)} rows to {file_path}")
         df.to_csv(file_path, index=False)
 
