@@ -12,13 +12,6 @@ from bs4 import BeautifulSoup
 from data_scraping.config import URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
 from utils import setup_logger
 
-@dataclass
-class Item:
-    name: str
-    price: float = 0.0
-
-Item()
-
 logger = logging.getLogger(__name__)
 
 PROPERTY_TYPE_CODE = {
@@ -163,7 +156,7 @@ def save_df_to_csv(file_path, df):
         df.drop_duplicates(subset=subset_cols, inplace=True)
         df.sort_values('reference_period', ascending=False, inplace=True)
         logger.info(f"Saving {len(df)} rows to {file_path}")
-        df.to_csv(file_path, index=True)
+        df.to_csv(file_path, index=False)
 
 
 @click.command()
@@ -173,7 +166,6 @@ def main(log_dir):
     setup_logger(logger, log_dir)
     logger.info(f"Starting {__file__} with args: {log_dir}")
 
-    # We use the URA API here because it gives us the x y coordinates (more data essentially)
     get_url, post_url = URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
     dest_folder = os.path.abspath('data')
     dest_file_path = os.path.join(dest_folder, 'total_transactions.csv')
