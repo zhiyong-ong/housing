@@ -107,7 +107,7 @@ def main(log_dir):
         end_dt = current_dt - relativedelta(months=2)
     logger.info(f"Scraping transaction summary data until {end_dt}")
 
-    dest_folder = os.path.abspath('../data')
+    dest_folder = os.path.abspath('data')
     dest_file_path = os.path.join(dest_folder, 'transaction_summary.csv')
     os.makedirs(dest_folder, exist_ok=True)
 

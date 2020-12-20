@@ -1,5 +1,6 @@
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter, sleep
 
@@ -10,6 +11,13 @@ from bs4 import BeautifulSoup
 
 from data_scraping.config import URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
 from utils import setup_logger
+
+@dataclass
+class Item:
+    name: str
+    price: float = 0.0
+
+Item()
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +175,7 @@ def main(log_dir):
 
     # We use the URA API here because it gives us the x y coordinates (more data essentially)
     get_url, post_url = URA_WEBSITE_TX_GET_URL, URA_WEBSITE_TX_POST_URL
-    dest_folder = os.path.abspath('../data')
+    dest_folder = os.path.abspath('data')
     dest_file_path = os.path.join(dest_folder, 'total_transactions.csv')
     os.makedirs(dest_folder, exist_ok=True)
 

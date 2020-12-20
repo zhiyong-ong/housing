@@ -16,14 +16,20 @@ TRANSACTION_ENDPOINT = "/transaction"
 SUMMARY_ENDPOINT = "/summary"
 
 @router.get(TRANSACTION_ENDPOINT, response_model=List[schemas.TransactionData], status_code=status.HTTP_200_OK)
-def get_transaction_data(data_limit: int = 100, pagination: int = 1):
+def get_transaction_data(limit: int = 100, offset: int = 0):
+    print(limit, offset)
     return_data = []
     with open(Settings.TRANSACTION_DATA_FILE_PATH, 'r') as csvfile:
         data_reader = csv.DictReader(csvfile, delimiter=',')
 
-        for row in data_reader:
-            if data_reader.line_num == data_limit:
+        start_reading = False
+        for index, data in enumerate(data_reader):
+            if index == limit:
                 break
-            return_data.append(row)
+            if index == offset:
+                start_reading = True
+            if start_reading:
+                data['id'] = index
+                return_data.append(data)
     return return_data
 
